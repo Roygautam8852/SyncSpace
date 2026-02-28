@@ -68,6 +68,10 @@ const login = async (req, res) => {
     }
 
     // Check password
+    if (!user.password) {
+      return res.status(401).json({ message: "This account was created with Google. Please use Google Login." });
+    }
+
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid email or password" });
