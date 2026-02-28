@@ -193,13 +193,13 @@ const LandingPage = () => {
                 <div className="flex items-center gap-3">
                     <Link
                         to="/login"
-                        className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors px-4 py-2 rounded-xl hover:bg-indigo-50"
+                        className="text-xs sm:text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl hover:bg-indigo-50"
                     >
                         Sign In
                     </Link>
                     <Link
                         to="/register"
-                        className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-5 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30 hover:-translate-y-0.5 transition-all active:scale-95"
+                        className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30 hover:-translate-y-0.5 transition-all active:scale-95"
                     >
                         Get Started
                     </Link>
@@ -301,6 +301,86 @@ const LandingPage = () => {
                                 </div>
                             ))}
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* ═══════════════════════ AI Features Section ═══════════════════════ */}
+            <section id="ai-features" className="py-24 px-6 relative overflow-hidden bg-slate-900 border-y border-slate-800">
+                {/* Background effects */}
+                <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 pointer-events-none"></div>
+                <div className="absolute -top-24 -left-24 w-96 h-96 bg-indigo-600/20 rounded-full blur-[100px] pointer-events-none"></div>
+                <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-blue-600/20 rounded-full blur-[100px] pointer-events-none"></div>
+
+                <div className="max-w-7xl mx-auto relative z-10">
+                    <div className="text-center mb-16">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase tracking-[0.15em] mb-5 border border-indigo-500/20">
+                            <Sparkles size={12} />
+                            AI-Powered Intelligence
+                        </div>
+                        <h2 className="text-4xl md:text-5xl font-black text-white mb-5 tracking-tight">
+                            Elevate your creativity <br />
+                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-blue-400 to-cyan-300">
+                                with professional AI.
+                            </span>
+                        </h2>
+                        <p className="text-lg text-slate-400 font-medium max-w-2xl mx-auto">
+                            SyncSpace integrates cutting-edge AI models to help you visualize ideas faster,
+                            analyze complex images, and brainstorm without boundaries.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        {/* AI Drawing */}
+                        <div className="group bg-white/5 border border-white/10 p-8 rounded-[2.5rem] hover:bg-white/[0.08] hover:border-white/20 transition-all duration-500 shadow-2xl">
+                            <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center mb-6 shadow-lg shadow-indigo-600/30 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
+                                <Sparkles size={24} className="text-white" />
+                            </div>
+                            <h3 className="text-xl font-bold text-white mb-3">Magic Drawing</h3>
+                            <p className="text-slate-400 text-sm leading-relaxed mb-6 font-medium">
+                                Generate professional illustrations, icons, and artwork directly on your canvas using natural language prompts.
+                            </p>
+                            <div className="flex items-center gap-2 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
+                                <Zap size={12} />
+                                Powered by DALL-E & HF
+                            </div>
+                        </div>
+
+                        {/* AI Chat */}
+                        <div className="group bg-white/5 border border-white/10 p-8 rounded-[2.5rem] hover:bg-white/[0.08] hover:border-white/20 transition-all duration-500 shadow-2xl">
+                            <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center mb-6 shadow-lg shadow-blue-600/30 group-hover:scale-110 group-hover:-rotate-6 transition-all duration-300">
+                                <MessageSquare size={24} className="text-white" />
+                            </div>
+                            <h3 className="text-xl font-bold text-white mb-3">Intelligent Sidebar</h3>
+                            <p className="text-slate-400 text-sm leading-relaxed mb-6 font-medium">
+                                A dedicated AI companion that understands your workspace context. Brainstorm ideas, write content, and solve problems instantly.
+                            </p>
+                            <div className="flex items-center gap-2 text-blue-400 text-[10px] font-black uppercase tracking-widest">
+                                <Zap size={12} />
+                                Gemini & GPT-4 Integrated
+                            </div>
+                        </div>
+
+                        {/* AI Vision */}
+                        <div className="group bg-white/5 border border-white/10 p-8 rounded-[2.5rem] hover:bg-white/[0.08] hover:border-white/20 transition-all duration-500 shadow-2xl">
+                            <div className="w-14 h-14 rounded-2xl bg-cyan-600 flex items-center justify-center mb-6 shadow-lg shadow-cyan-600/30 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
+                                <Layers size={24} className="text-white" />
+                            </div>
+                            <h3 className="text-xl font-bold text-white mb-3">Vision Analysis</h3>
+                            <p className="text-slate-400 text-sm leading-relaxed mb-6 font-medium">
+                                Upload any image and let the AI explain it, extract text, or provide design feedback. Collaboration meets deep understanding.
+                            </p>
+                            <div className="flex items-center gap-2 text-cyan-400 text-[10px] font-black uppercase tracking-widest">
+                                <Zap size={12} />
+                                Advanced Vision Models
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-16 flex justify-center">
+                        <Link to="/register" className="px-8 py-3.5 bg-white text-slate-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-50 transition-all animate-pulse-glow">
+                            Try AI Features Now
+                        </Link>
                     </div>
                 </div>
             </section>

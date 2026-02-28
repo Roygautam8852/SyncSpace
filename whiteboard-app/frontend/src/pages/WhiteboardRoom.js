@@ -2,12 +2,13 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
-import { roomService } from "../services/api";
+import { roomService, aiService } from "../services/api";
 import Toolbar from "../components/Toolbar";
 import Chat from "../components/Chat";
 import StylingPanel from "../components/StylingPanel";
+import AiDrawingModal from "../components/AiDrawingModal";
 import toast from "react-hot-toast";
-import { Plus, Minus, Save, FilePlus, ChevronRight, MessageCircle, Users, X, Share2, Download, Palette, Type, Sliders, ChevronDown, Edit2, Check, Video, Monitor, Copy, Sun, Moon, StickyNote, ImagePlus, LogOut } from "lucide-react";
+import { Plus, Minus, Save, FilePlus, ChevronRight, MessageCircle, Users, X, Share2, Download, Palette, Type, Sliders, ChevronDown, Edit2, Check, Video, Monitor, Copy, Sun, Moon, StickyNote, ImagePlus, LogOut, Sparkles } from "lucide-react";
 import WebRTCMeeting from "../components/video/WebRTCMeeting";
 
 
@@ -15,7 +16,7 @@ const WhiteboardRoom = () => {
     const { roomId } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
-    const { socket } = useSocket();
+    const { socket, isConnected } = useSocket();
 
     const canvasRef = useRef(null);
     const viewportRef = useRef(null);
@@ -106,6 +107,7 @@ const WhiteboardRoom = () => {
     const [activeDropdown, setActiveDropdown] = useState(null);
     const [isEditingName, setIsEditingName] = useState(false);
     const [tempBoardName, setTempBoardName] = useState("");
+    const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
 
     const colors = [
@@ -118,7 +120,7 @@ const WhiteboardRoom = () => {
     const isDrawingTool = ["pencil", "highlighter", "soft-brush", "marker", "smooth-pencil", "precision-eraser",
         "rect", "circle", "line", "arrow", "double-arrow", "rounded-rect", "ellipse",
         "triangle", "diamond", "sticky", "speech-bubble", "parallelogram",
-        "cylinder", "document", "cloud"
+        "cylinder", "document", "cloud", "text", "select", "eraser"
     ].includes(tool);
 
     const canvasCursor = {
@@ -177,6 +179,10 @@ const WhiteboardRoom = () => {
             socket.emit("join-room", { roomId, userId: user._id, userName: user.name });
 
             socket.on("user-joined", (data) => toast.success(`${data.userName} joined`));
+            socket.on("error-message", (msg) => {
+                toast.dismiss("new-page-toast");
+                toast.error(msg);
+            });
             socket.on("online-users", (users) => setParticipants(users));
             socket.on("chat-message", (msg) => setMessages((prev) => [...prev, msg]));
             socket.on("chat-history", (h) => setMessages(h));
@@ -259,6 +265,7 @@ const WhiteboardRoom = () => {
 
             // Page events
             socket.on("page-added", (data) => {
+                toast.dismiss("new-page-toast");
                 setPages(data.pages);
                 setActivePageId(data.pageId);
                 strokesRef.current = [];
@@ -266,6 +273,7 @@ const WhiteboardRoom = () => {
                 historyRef.current = [[]];
                 historyIndexRef.current = 0;
                 redrawCanvas();
+                toast.success(`Page "${data.pageName}" added`);
             });
 
             socket.on("page-switched", (data) => {
@@ -305,7 +313,7 @@ const WhiteboardRoom = () => {
                 ["user-joined", "online-users", "chat-message", "chat-history", "drawing", "erase",
                     "board-cleared", "canvas-state", "undo", "redo", "user-left", "new-stroke",
                     "board-state-updated", "new-file", "cursor-move", "typing-start", "typing-stop",
-                    "page-added", "page-switched", "board-saved", "page-deleted", "call:active"].forEach(ev => socket.off(ev));
+                    "page-added", "page-switched", "board-saved", "page-deleted", "call:active", "error-message"].forEach(ev => socket.off(ev));
             }
         };
     }, [roomId, socket, user, navigate]);
@@ -739,15 +747,19 @@ const WhiteboardRoom = () => {
 
     const handleMouseMove = (e) => {
         const now = Date.now();
+        // Use pointer coords for consistency
+        const clientX = e.clientX;
+        const clientY = e.clientY;
+
         if (socket && now - lastCursorEmitRef.current > 50) {
             lastCursorEmitRef.current = now;
-            socket.emit('cursor-move', { roomId, cursorData: { x: e.clientX, y: e.clientY, userName: user.name, color } });
+            socket.emit('cursor-move', { roomId, cursorData: { x: clientX, y: clientY, userName: user.name, color } });
         }
 
         if (isPanningRef.current) {
             cameraOffsetRef.current = {
-                x: e.clientX - panStartRef.current.x,
-                y: e.clientY - panStartRef.current.y
+                x: clientX - panStartRef.current.x,
+                y: clientY - panStartRef.current.y
             };
             syncViewDOM();
             return;
@@ -755,57 +767,89 @@ const WhiteboardRoom = () => {
 
         if (isDrawingRef.current) {
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-            const clientX = e.clientX;
-            const clientY = e.clientY;
             const shiftKey = e.shiftKey;
             animationFrameRef.current = requestAnimationFrame(() => draw({ clientX, clientY, shiftKey }));
-        } else if (interactionRef.current.type) {
-            const pos = getMousePos(e);
-            const dx = pos.x - interactionRef.current.startPos.x;
-            const dy = pos.y - interactionRef.current.startPos.y;
-            const strokeId = interactionRef.current.strokeId;
+            return;
+        }
 
-            const newStrokes = strokesRef.current.map(s => {
-                if (s.id !== strokeId) return s;
+        // ─── OBJECT INTERACTION (Drag / Resize) ───
+        if (interactionRef.current.type) {
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
 
-                if (interactionRef.current.type === 'move') {
-                    const newPoints = interactionRef.current.originalPoints.map(p => {
-                        if (!p) return p;
-                        return {
+            animationFrameRef.current = requestAnimationFrame(() => {
+                const pos = getMousePos(e);
+                const dx = pos.x - interactionRef.current.startPos.x;
+                const dy = pos.y - interactionRef.current.startPos.y;
+                const strokeId = interactionRef.current.strokeId;
+
+                // Directly find and update DOM for 60fps fluidity
+                const overlayEl = document.getElementById(`obj-overlay-${strokeId}`);
+
+                const newStrokes = strokesRef.current.map(s => {
+                    if (s.id !== strokeId) return s;
+
+                    let updated = { ...s };
+                    if (interactionRef.current.type === 'move') {
+                        updated.points = interactionRef.current.originalPoints.map(p => ({
                             x: p.x + dx,
                             y: p.y + dy
-                        };
-                    });
-                    return { ...s, points: newPoints };
-                } else if (interactionRef.current.type === 'resize') {
-                    if (s.type === 'image') {
-                        return {
-                            ...s,
-                            imgW: Math.max(50, interactionRef.current.originalImgW + dx),
-                            imgH: Math.max(50, interactionRef.current.originalImgH + dy)
-                        };
-                    } else if (s.type === 'sticky') {
-                        const start = interactionRef.current.originalPoints[0];
-                        const newEnd = {
-                            x: Math.max(start.x + 50, interactionRef.current.originalPoints[1].x + dx),
-                            y: Math.max(start.y + 50, interactionRef.current.originalPoints[1].y + dy)
-                        };
-                        return { ...s, points: [start, newEnd] };
+                        }));
+                    } else if (interactionRef.current.type === 'resize') {
+                        if (s.type === 'image') {
+                            updated.imgW = Math.max(50, interactionRef.current.originalImgW + dx);
+                            updated.imgH = Math.max(50, interactionRef.current.originalImgH + dy);
+                        } else if (s.type === 'sticky') {
+                            const start = interactionRef.current.originalPoints[0];
+                            const newEnd = {
+                                x: Math.max(start.x + 50, interactionRef.current.originalPoints[1].x + dx),
+                                y: Math.max(start.y + 50, interactionRef.current.originalPoints[1].y + dy)
+                            };
+                            updated.points = [start, newEnd];
+                        }
                     }
-                }
-                return s;
+
+                    // Update DOM style directly so it's smooth
+                    if (overlayEl) {
+                        const cScale = cameraScaleRef.current;
+                        const cOffset = cameraOffsetRef.current;
+
+                        // Use screen-space delta for "exact follow" of the cursor
+                        const screenDx = clientX - interactionRef.current.startScreenPos.x;
+                        const screenDy = clientY - interactionRef.current.startScreenPos.y;
+
+                        const startPoint = interactionRef.current.originalPoints[0];
+                        const x = Math.min(startPoint.x, updated.type === 'sticky' ? updated.points[1].x : startPoint.x);
+                        const y = Math.min(startPoint.y, updated.type === 'sticky' ? updated.points[1].y : startPoint.y);
+
+                        // Calculate original screen position
+                        const origScreenX = x * cScale + cOffset.x;
+                        const origScreenY = y * cScale + cOffset.y;
+
+                        // Final screen position is original + exact mouse delta
+                        const finalX = origScreenX + screenDx;
+                        const finalY = origScreenY + screenDy;
+
+                        const sW = (updated.type === 'image' ? updated.imgW : Math.abs(updated.points[1].x - updated.points[0].x)) * cScale;
+                        const sH = (updated.type === 'image' ? updated.imgH : Math.abs(updated.points[1].y - updated.points[0].y)) * cScale;
+
+                        overlayEl.style.transform = `translate3d(${finalX}px, ${finalY}px, 0)`;
+                        overlayEl.style.width = `${sW}px`;
+                        overlayEl.style.height = `${sH}px`;
+                        overlayEl.classList.add('is-interacting');
+                    }
+
+                    return updated;
+                });
+
+                strokesRef.current = newStrokes;
+                // Only redraw canvas if we must (during live move, it's better to NOT trigger React full render)
+                // We'll update main state later on PointerUp
+                redrawCanvas();
             });
+            return;
+        }
 
-            strokesRef.current = newStrokes;
-            setStrokesVersion(v => v + 1);
-            redrawCanvas();
-
-            // Emit update to others
-            const updatedStroke = strokesRef.current.find(s => s.id === strokeId);
-            if (socket && updatedStroke) {
-                socket.emit('update-stroke', { roomId, stroke: updatedStroke, pageId: activePageId });
-            }
-        } else if (tool === 'eraser' && e.buttons === 1) {
+        if (tool === 'eraser' && e.buttons === 1) {
             eraseObjectAt(getMousePos(e));
         }
     };
@@ -867,8 +911,21 @@ const WhiteboardRoom = () => {
 
     const stopDrawing = () => {
         if (interactionRef.current.type) {
+            const strokeId = interactionRef.current.strokeId;
+            const overlayEl = document.getElementById(`obj-overlay-${strokeId}`);
+            if (overlayEl) overlayEl.classList.remove('is-interacting');
+
             interactionRef.current = { type: null, strokeId: null, startPos: { x: 0, y: 0 }, originalPoints: [], originalImgW: 0, originalImgH: 0 };
+
+            // Finalize React state ONLY on release
+            setStrokesVersion(v => v + 1);
             pushToHistory();
+
+            // Final broadcast
+            const finalStroke = strokesRef.current.find(s => s.id === strokeId);
+            if (socket && finalStroke) {
+                socket.emit('update-stroke', { roomId, stroke: finalStroke, pageId: activePageId });
+            }
             return;
         }
 
@@ -1061,6 +1118,10 @@ const WhiteboardRoom = () => {
     };
 
     const handleNewPage = () => {
+        if (!socket || !isConnected) return toast.error("Socket not connected");
+        if (!user) return toast.error("User not found");
+
+        toast.loading("Creating new page...", { id: "new-page-toast" });
         socket.emit("new-page", { roomId, userId: user._id });
     };
 
@@ -1094,6 +1155,42 @@ const WhiteboardRoom = () => {
         }
     };
 
+    const handleAiMessage = async (text) => {
+        const userMsg = {
+            sender: user._id,
+            senderName: user.name,
+            text: text,
+            timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, userMsg]);
+
+        const loadingId = "ai-" + Date.now();
+        const loadingMsg = {
+            sender: "ai-agent",
+            senderName: "AI Agent",
+            text: "Thinking...",
+            timestamp: new Date().toISOString(),
+            id: loadingId
+        };
+        setMessages(prev => [...prev, loadingMsg]);
+
+        try {
+            const context = `Board: ${tempBoardName}. Active Tool: ${tool}. Participants: ${participants.length}.`;
+            const res = await aiService.agentAction(text, context);
+
+            setMessages(prev => prev.map(m => m.id === loadingId ? {
+                ...m,
+                text: res.data.reply
+            } : m));
+        } catch (err) {
+            console.error("AI Error:", err);
+            setMessages(prev => prev.map(m => m.id === loadingId ? {
+                ...m,
+                text: "I'm sorry, I encountered an error while processing your request."
+            } : m));
+        }
+    };
+
     // ─── KEYBOARD SHORTCUTS ───
     React.useEffect(() => {
         const onKey = (e) => {
@@ -1108,7 +1205,62 @@ const WhiteboardRoom = () => {
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, []);
+    }, [handleUndo, handleRedo]);
+
+    // ─── AI DRAWING HANDLER ───
+    const handleAiDrawingGenerated = useCallback(({ src, width, height, title }) => {
+        // Place image at center of current viewport
+        const viewport = viewportRef.current;
+        if (!viewport) return;
+        const rect = viewport.getBoundingClientRect();
+
+        // Use Refs for correct current values during callback
+        const currentScale = cameraScaleRef.current;
+        const currentOffset = cameraOffsetRef.current;
+
+        const centerX = (rect.width / 2 - currentOffset.x) / currentScale;
+        const centerY = (rect.height / 2 - currentOffset.y) / currentScale;
+
+        // Scale logic: pixel art needs scaling, HD images (512+) don't
+        const isHd = width >= 512;
+        const scaleFactor = isHd ? 0.8 : 2; // For HD, slightly smaller than 512. For pixel, double it.
+        const imgW = width * scaleFactor;
+        const imgH = height * scaleFactor;
+
+        const imageStroke = {
+            id: Date.now() + Math.random(),
+            type: 'image',
+            src: src,
+            points: [{ x: centerX - imgW / 2, y: centerY - imgH / 2 }],
+            imgW: imgW,
+            imgH: imgH,
+            color: '#000',
+            size: 1,
+            opacity: 1,
+            strokeStyle: 'solid',
+            fill: false
+        };
+
+        // Pre-cache the image
+        const img = new window.Image();
+        img.onload = () => {
+            imageCache.current.set(src, img);
+            strokesRef.current = [...strokesRef.current, imageStroke];
+            setStrokesVersion(v => v + 1);
+            pushToHistory();
+
+            // AUTO-SWITCH TO SELECT TOOL: This allows immediate drag/resize/delete
+            setTool('select');
+
+            if (socket) {
+                socket.emit('new-stroke', { roomId, stroke: imageStroke, pageId: activePageId });
+            }
+            redrawCanvas();
+            toast.success(`AI Drawing "${title}" placed! Switch to Select tool to move it.`, { icon: '✨' });
+        };
+        img.src = src;
+    }, [socket, roomId, activePageId, pushToHistory, redrawCanvas, setStrokesVersion, setTool]);
+
 
     // Unread messages badge
     const [unreadCount, setUnreadCount] = useState(0);
@@ -1288,6 +1440,15 @@ const WhiteboardRoom = () => {
                 <div className="wb-header-right">
                     <div className="wb-action-group">
                         <button
+                            className="wb-btn-ai-draw"
+                            onClick={() => setIsAiModalOpen(true)}
+                            title="AI Drawing Agent — Draw anything with AI"
+                            id="ai-drawing-btn"
+                        >
+                            <Sparkles size={16} />
+                        </button>
+                        <div className="wb-header-divider-mini"></div>
+                        <button
                             className={`wb-btn-icon-modern ${tool === 'sticky' ? 'wb-btn-active' : ''}`}
                             onClick={() => { setTool('sticky'); toast('Click & drag on canvas to place a sticky note', { icon: '📝' }); }}
                             title="Sticky Note"
@@ -1422,14 +1583,14 @@ const WhiteboardRoom = () => {
                                 ref={canvasRef}
                                 className="wb-canvas"
                                 style={{ cursor: canvasCursor }}
-                                onMouseDown={startDrawing}
-                                onMouseMove={handleMouseMove}
-                                onMouseUp={stopDrawing}
-                                onMouseOut={stopDrawing}
+                                onPointerDown={startDrawing}
+                                onPointerMove={handleMouseMove}
+                                onPointerUp={stopDrawing}
+                                onPointerOut={stopDrawing}
                             />
 
-                            {/* Object Overlays (Image & Sticky) */}
-                            {strokesRef.current.filter(s => s.type === 'image' || s.type === 'sticky').map(stroke => {
+                            {/* Object Overlays (Image, Sticky & Text) UI */}
+                            {strokesRef.current.filter(s => s.type === 'image' || s.type === 'sticky' || s.type === 'text').map(stroke => {
                                 if (!stroke.points || stroke.points.length === 0) return null;
                                 const start = stroke.points[0];
                                 const end = stroke.type === 'sticky' && stroke.points.length > 1 ? stroke.points[1] : null;
@@ -1438,8 +1599,19 @@ const WhiteboardRoom = () => {
 
                                 const x = Math.min(start.x, end ? end.x : start.x);
                                 const y = Math.min(start.y, end ? end.y : start.y);
-                                const w = stroke.type === 'sticky' && end ? Math.abs(end.x - start.x) : (stroke.imgW || 250);
-                                const h = stroke.type === 'sticky' && end ? Math.abs(end.y - start.y) : (stroke.imgH || 180);
+
+                                // Bounding box for drag area
+                                let w = 100, h = 40;
+                                if (stroke.type === 'sticky' && end) {
+                                    w = Math.abs(end.x - start.x);
+                                    h = Math.abs(end.y - start.y);
+                                } else if (stroke.type === 'image') {
+                                    w = stroke.imgW || 250;
+                                    h = stroke.imgH || 180;
+                                } else if (stroke.type === 'text') {
+                                    w = (stroke.text.length * (stroke.size * 0.5)) || 100;
+                                    h = stroke.size || 40;
+                                }
 
                                 const screenX = x * cameraScale + cameraOffset.x;
                                 const screenY = y * cameraScale + cameraOffset.y;
@@ -1449,24 +1621,28 @@ const WhiteboardRoom = () => {
                                 return (
                                     <div
                                         key={stroke.id}
-                                        className="wb-obj-overlay"
+                                        id={`obj-overlay-${stroke.id}`}
+                                        className={`wb-obj-overlay ${interactionRef.current.strokeId === stroke.id ? 'is-interacting' : ''}`}
                                         style={{
                                             position: 'absolute',
-                                            left: screenX,
-                                            top: screenY,
+                                            left: 0,
+                                            top: 0,
+                                            transform: `translate3d(${screenX}px, ${screenY}px, 0)`,
                                             width: screenW,
                                             height: screenH,
                                             zIndex: 10,
-                                            pointerEvents: ['pencil', 'eraser', 'highlighter'].includes(tool) ? 'none' : 'all',
+                                            pointerEvents: ['pencil', 'eraser', 'highlighter', 'text'].includes(tool) ? 'none' : 'all',
                                         }}
-                                        onMouseDown={(e) => {
+                                        onPointerDown={(e) => {
                                             if (e.button !== 0) return;
                                             e.stopPropagation();
+                                            e.currentTarget.setPointerCapture(e.pointerId);
                                             const pos = getMousePos(e);
                                             interactionRef.current = {
                                                 type: 'move',
                                                 strokeId: stroke.id,
-                                                startPos: pos,
+                                                startPos: pos, // World space for logic
+                                                startScreenPos: { x: e.clientX, y: e.clientY }, // Screen space for exact follow
                                                 originalPoints: JSON.parse(JSON.stringify(stroke.points)),
                                                 originalImgW: stroke.imgW,
                                                 originalImgH: stroke.imgH
@@ -1476,6 +1652,7 @@ const WhiteboardRoom = () => {
                                         <button
                                             className="wb-obj-delete-btn"
                                             title="Remove"
+                                            onPointerDown={(e) => e.stopPropagation()} // Prevent parent drag start
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 strokesRef.current = strokesRef.current.filter(s => s.id !== stroke.id);
@@ -1491,13 +1668,15 @@ const WhiteboardRoom = () => {
 
                                         <div
                                             className="wb-resize-handle"
-                                            onMouseDown={(e) => {
-                                                e.stopPropagation();
+                                            onPointerDown={(e) => {
+                                                e.stopPropagation(); // Prevent parent drag start
+                                                e.currentTarget.setPointerCapture(e.pointerId);
                                                 const pos = getMousePos(e);
                                                 interactionRef.current = {
                                                     type: 'resize',
                                                     strokeId: stroke.id,
                                                     startPos: pos,
+                                                    startScreenPos: { x: e.clientX, y: e.clientY },
                                                     originalPoints: JSON.parse(JSON.stringify(stroke.points)),
                                                     originalImgW: stroke.imgW,
                                                     originalImgH: stroke.imgH
@@ -1509,6 +1688,8 @@ const WhiteboardRoom = () => {
                             })}
 
                             <input type="file" accept="image/*" className="hidden" ref={imageFileRef} onChange={handleImageUpload} />
+
+
                             <StylingPanel tool={tool} visible={showStyling} strokeStyle={strokeStyle} setStrokeStyle={setStrokeStyle} fill={fill} setFill={setFill} />
 
                             {/* Bottom Bar: Consolidated Pages + Zoom */}
@@ -1655,6 +1836,7 @@ const WhiteboardRoom = () => {
                                 <Chat
                                     messages={messages}
                                     onSendMessage={(txt) => socket.emit("chat-message", { roomId, message: txt, userId: user._id, userName: user.name })}
+                                    onSendAiMessage={handleAiMessage}
                                     currentUser={user}
                                     socket={socket}
                                     roomId={roomId}
@@ -1747,6 +1929,13 @@ const WhiteboardRoom = () => {
                     />
                 )
             }
+
+            {/* AI Drawing Modal */}
+            <AiDrawingModal
+                isOpen={isAiModalOpen}
+                onClose={() => setIsAiModalOpen(false)}
+                onDrawingGenerated={handleAiDrawingGenerated}
+            />
         </div >
     );
 };

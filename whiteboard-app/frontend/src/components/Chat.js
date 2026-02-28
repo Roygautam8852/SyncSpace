@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Video, PhoneIncoming } from "lucide-react";
+import { Video, PhoneIncoming, Sparkles } from "lucide-react";
 
-const Chat = ({ messages, onSendMessage, currentUser, socket, roomId, typingUsers = [], participants = [], inCall, activeCallInfo, onJoinCall, onToggleVideo }) => {
+const Chat = ({ messages, onSendMessage, onSendAiMessage, currentUser, socket, roomId, typingUsers = [], participants = [], inCall, activeCallInfo, onJoinCall, onToggleVideo }) => {
     const [input, setInput] = useState("");
+    const [isAiMode, setIsAiMode] = useState(false);
     const chatEndRef = useRef(null);
     const typingTimeoutRef = useRef(null);
     const [isTyping, setIsTyping] = useState(false);
@@ -32,7 +33,11 @@ const Chat = ({ messages, onSendMessage, currentUser, socket, roomId, typingUser
     const handleSubmit = (e) => {
         e.preventDefault();
         if (input.trim()) {
-            onSendMessage(input.trim());
+            if (isAiMode) {
+                onSendAiMessage(input.trim());
+            } else {
+                onSendMessage(input.trim());
+            }
             setInput("");
             setIsTyping(false);
             if (socket && roomId) socket.emit("typing-stop", { roomId });
@@ -54,6 +59,7 @@ const Chat = ({ messages, onSendMessage, currentUser, socket, roomId, typingUser
 
     const getNameColor = (name) => {
         if (!name) return "#64748b";
+        if (name === "AI Agent") return "#8b5cf6"; // Purple for AI
         const colors = [
             "#f87171", "#fb923c", "#fbbf24", "#34d399",
             "#22d3ee", "#60a5fa", "#818cf8", "#c084fc", "#f472b6"
@@ -86,13 +92,11 @@ const Chat = ({ messages, onSendMessage, currentUser, socket, roomId, typingUser
                 </div>
                 <div className="wb-video-call-action">
                     {inCall ? (
-                        /* Already in call — show a subtle "In Call" indicator */
                         <div className="wb-call-btn active" style={{ cursor: 'default' }}>
                             <Video size={14} />
                             <span>In Call</span>
                         </div>
                     ) : callIsActive ? (
-                        /* A call is active in the room — show "Join" with participant count */
                         <button
                             className="wb-call-btn wb-call-join-active"
                             onClick={onJoinCall}
@@ -102,7 +106,6 @@ const Chat = ({ messages, onSendMessage, currentUser, socket, roomId, typingUser
                             <span>Join ({callParticipantCount})</span>
                         </button>
                     ) : (
-                        /* No active call — show "Start Call" */
                         <button
                             className="wb-call-btn"
                             onClick={onJoinCall}
@@ -126,9 +129,10 @@ const Chat = ({ messages, onSendMessage, currentUser, socket, roomId, typingUser
                 ) : (
                     messages.map((msg, index) => {
                         const isOwn = msg.sender === currentUser._id;
+                        const isAi = msg.senderName === "AI Agent";
                         const senderColor = getNameColor(msg.senderName);
                         return (
-                            <div key={index} className={`wb-chat-msg ${isOwn ? "own" : "other"}`}>
+                            <div key={index} className={`wb-chat-msg ${isOwn ? "own" : (isAi ? "ai" : "other")}`}>
                                 <div className="wb-msg-header">
                                     <span className="wb-msg-name" style={{ color: isOwn ? 'inherit' : senderColor }}>
                                         {msg.senderName}
@@ -138,7 +142,7 @@ const Chat = ({ messages, onSendMessage, currentUser, socket, roomId, typingUser
                                 <div className="wb-msg-content-wrapper">
                                     {!isOwn && (
                                         <div className="wb-msg-avatar" style={{ backgroundColor: senderColor }}>
-                                            {msg.senderName[0]?.toUpperCase()}
+                                            {isAi ? "✨" : msg.senderName[0]?.toUpperCase()}
                                         </div>
                                     )}
                                     <div className="wb-msg-bubble">
@@ -167,18 +171,28 @@ const Chat = ({ messages, onSendMessage, currentUser, socket, roomId, typingUser
 
             {/* Input Area */}
             <div className="wb-chat-input-area">
+                <div className="wb-chat-input-toolbar">
+                    <button
+                        className={`wb-ai-toggle ${isAiMode ? 'active' : ''}`}
+                        onClick={() => setIsAiMode(!isAiMode)}
+                        title={isAiMode ? "Switch to Room Chat" : "Switch to AI Agent (Llama 3.1)"}
+                    >
+                        <Sparkles size={14} />
+                        <span>AI Mode</span>
+                    </button>
+                </div>
                 <form className="wb-chat-form" onSubmit={handleSubmit}>
                     <input
                         type="text"
-                        placeholder="Type a message..."
-                        className="wb-chat-input"
+                        placeholder={isAiMode ? "Ask AI Agent..." : "Type a message..."}
+                        className={`wb-chat-input ${isAiMode ? 'ai-active' : ''}`}
                         value={input}
                         onChange={handleInputChange}
                     />
                     <button
                         type="submit"
                         disabled={!input.trim()}
-                        className="wb-chat-send"
+                        className={`wb-chat-send ${isAiMode ? 'ai-active' : ''}`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
                             fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"

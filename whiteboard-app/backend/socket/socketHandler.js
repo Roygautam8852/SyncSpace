@@ -189,6 +189,7 @@ const setupSocket = (io) => {
       try {
         const room = await Room.findOne({ roomId });
         if (room) {
+          if (!room.pages) room.pages = [];
           const pageId = uuidv4().slice(0, 8);
           const pageName = `Page ${room.pages.length + 1}`;
           const newPage = { pageId, pageName, strokes: [], canvasData: "" };
@@ -200,9 +201,12 @@ const setupSocket = (io) => {
             pageName,
             pages: room.pages.map((p) => ({ pageId: p.pageId, pageName: p.pageName })),
           });
+        } else {
+          socket.emit("error-message", "Room not found while creating page");
         }
       } catch (err) {
         console.error("New page error:", err);
+        socket.emit("error-message", "Failed to create new page");
       }
     });
 

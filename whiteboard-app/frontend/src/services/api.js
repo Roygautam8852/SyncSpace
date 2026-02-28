@@ -57,4 +57,10 @@ export const roomService = {
   deleteRoom: (roomId) => api.delete(`/rooms/${roomId}`),
 };
 
+// ─── AI Services ───
+export const aiService = {
+  generateImage: (prompt) => api.post("/ai/generate-image", { prompt }),
+  agentAction: (message, context) => api.post("/ai/agent-action", { message, context }),
+};
+
 export default api;

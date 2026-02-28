@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { roomService } from "../services/api";
+import { roomService, authService } from "../services/api";
 import toast from "react-hot-toast";
 import {
   Layout,
@@ -40,11 +40,13 @@ import {
   Copy,
   ExternalLink,
   MailPlus,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Menu,
+  X
 } from "lucide-react";
 
 const Dashboard = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -64,6 +66,12 @@ const Dashboard = () => {
   const [showRemoveMemberModal, setShowRemoveMemberModal] = useState(false);
   const [copying, setCopying] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'system');
+  const [profileName, setProfileName] = useState(user?.name || "");
+  const [profileAvatar, setProfileAvatar] = useState(user?.avatar || "");
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const avatarInputRef = useRef(null);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -92,6 +100,13 @@ const Dashboard = () => {
   useEffect(() => {
     fetchRooms();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      setProfileName(user.name || "");
+      setProfileAvatar(user.avatar || "");
+    }
+  }, [user]);
 
   const fetchRooms = async () => {
     try {
@@ -147,6 +162,39 @@ const Dashboard = () => {
     }
   };
 
+  const handleProfileImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        return toast.error("Image too large (max 2MB)");
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAvatarPreview(reader.result);
+        setProfileAvatar(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleProfileUpdate = async () => {
+    if (!profileName.trim()) return toast.error("Name is required");
+    setIsUpdatingProfile(true);
+    try {
+      const res = await authService.updateProfile({
+        name: profileName,
+        avatar: profileAvatar
+      });
+      updateUser(res.data.user);
+      setAvatarPreview(null);
+      toast.success("Profile updated!");
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Update failed");
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
   const filteredRooms = rooms.filter((r) =>
     r.roomName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     r.roomId.toLowerCase().includes(searchQuery.toLowerCase())
@@ -182,8 +230,12 @@ const Dashboard = () => {
           <div className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
             <div className="flex items-start justify-between mb-8">
               <div className="flex items-center gap-5">
-                <div className="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center text-white text-2xl font-black shadow-xl shadow-blue-500/20">
-                  {user?.name?.[0]?.toUpperCase()}
+                <div className="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center text-white text-2xl font-black shadow-xl shadow-blue-500/20 overflow-hidden border-2 border-white dark:border-slate-800">
+                  {user?.avatar ? (
+                    <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    user?.name?.[0]?.toUpperCase()
+                  )}
                 </div>
                 <div>
                   <h3 className="text-xl font-black text-slate-900 dark:text-white">{user?.name}</h3>
@@ -292,8 +344,13 @@ const Dashboard = () => {
           <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Personal Profile</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Update your personal information and public presence.</p>
         </div>
-        <button className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">
-          Save Changes
+        <button
+          onClick={handleProfileUpdate}
+          disabled={isUpdatingProfile}
+          className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {isUpdatingProfile && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
+          {isUpdatingProfile ? "Saving..." : "Save Changes"}
         </button>
       </div>
 
@@ -302,10 +359,24 @@ const Dashboard = () => {
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-200 dark:border-slate-800 p-8 shadow-sm flex flex-col items-center text-center">
             <div className="relative group mb-6">
-              <div className="w-32 h-32 rounded-[40px] bg-blue-600 flex items-center justify-center text-white text-4xl font-black shadow-2xl shadow-blue-500/20">
-                {user?.name?.[0]?.toUpperCase()}
+              <input
+                type="file"
+                ref={avatarInputRef}
+                onChange={handleProfileImageChange}
+                accept="image/*"
+                className="hidden"
+              />
+              <div className="w-32 h-32 rounded-[40px] bg-blue-600 flex items-center justify-center text-white text-4xl font-black shadow-2xl shadow-blue-500/20 overflow-hidden border-4 border-white dark:border-slate-800">
+                {avatarPreview || profileAvatar ? (
+                  <img src={avatarPreview || profileAvatar} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  user?.name?.[0]?.toUpperCase()
+                )}
               </div>
-              <button className="absolute bottom-0 right-0 w-10 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-blue-600 hover:shadow-lg transition-all shadow-md group-hover:scale-110">
+              <button
+                onClick={() => avatarInputRef.current?.click()}
+                className="absolute bottom-0 right-0 w-10 h-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-blue-600 hover:shadow-lg transition-all shadow-md active:scale-90 group-hover:scale-110"
+              >
                 <Camera size={18} />
               </button>
             </div>
@@ -356,7 +427,8 @@ const Dashboard = () => {
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={16} />
                   <input
                     type="text"
-                    defaultValue={user?.name}
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
                     className="w-full pl-12 pr-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl text-sm font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-800 transition-all"
                   />
                 </div>
@@ -1002,13 +1074,26 @@ const Dashboard = () => {
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] dark:bg-slate-950 transition-colors duration-300">
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* ─── Sidebar ─── */}
-      <aside className="w-56 bg-[#1E293B] text-slate-300 flex flex-col shrink-0 border-r border-slate-800">
-        <div className="p-4 flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Layout className="text-white w-4 h-4" />
+      <aside className={`w-64 bg-[#1E293B] text-slate-300 flex flex-col shrink-0 border-r border-slate-800 fixed md:relative z-50 h-[100dvh] transition-transform duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <Layout className="text-white w-4 h-4" />
+            </div>
+            <span className="text-lg font-bold text-white tracking-tight">SyncSpace</span>
           </div>
-          <span className="text-lg font-bold text-white tracking-tight">SyncSpace</span>
+          <button className="md:hidden text-slate-400 hover:text-white" onClick={() => setIsMobileMenuOpen(false)}>
+            <X size={20} />
+          </button>
         </div>
 
         <nav className="flex-1 px-3 mt-2 space-y-0.5">
@@ -1062,8 +1147,12 @@ const Dashboard = () => {
         <div className="p-3 mt-auto">
           <div className="bg-slate-800/40 rounded-xl p-3 border border-slate-700/30">
             <div className="flex items-center gap-2.5 mb-2.5">
-              <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-xs shrink-0">
-                {user?.name?.[0]?.toUpperCase()}
+              <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-xs shrink-0 overflow-hidden">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  user?.name?.[0]?.toUpperCase()
+                )}
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white truncate">{user?.name}</div>
@@ -1082,34 +1171,43 @@ const Dashboard = () => {
       </aside>
 
       {/* ─── Main Content ─── */}
-      <main className="flex-1 overflow-y-auto no-scrollbar">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar w-full relative">
         {/* Top bar */}
-        <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 px-6 flex items-center justify-between transition-colors duration-300">
-          <div className="relative w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 w-3.5 h-3.5" />
-            <input
-              type="text"
-              placeholder="Search..."
-              className="w-full pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+        <div className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 px-4 md:px-6 flex items-center justify-between transition-colors duration-300">
+          <div className="flex items-center gap-3 w-full max-w-[200px] md:max-w-xs">
+            <button className="md:hidden p-1.5 text-slate-400 hover:text-blue-600 -ml-2 shrink-0" onClick={() => setIsMobileMenuOpen(true)}>
+              <Menu size={22} />
+            </button>
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 w-3.5 h-3.5 hidden sm:block" />
+              <input
+                type="text"
+                placeholder="Search..."
+                className="w-full pl-3 sm:pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-blue-600 transition-colors relative">
               <Bell size={18} />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-white dark:border-slate-900"></span>
             </button>
-            <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-            <div className="flex items-center gap-2.5">
-              <div className="flex flex-col items-end leading-tight">
+            <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-0.5 sm:mx-1"></div>
+            <div className="flex items-center gap-2 sm:gap-2.5 cursor-pointer" onClick={() => setActiveTab('profile')}>
+              <div className="hidden sm:flex flex-col items-end leading-tight">
                 <span className="text-xs font-bold text-slate-900 dark:text-slate-100">{user?.name}</span>
                 <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Active</span>
               </div>
-              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-white dark:border-slate-700 shadow-sm overflow-hidden shrink-0">
-                <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white font-bold text-xs uppercase">
-                  {user?.name?.[0]?.toUpperCase()}
-                </div>
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-white dark:border-slate-700 shadow-sm overflow-hidden shrink-0 flex items-center justify-center">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white font-black text-[10px] uppercase">
+                    {user?.name?.[0]?.toUpperCase()}
+                  </div>
+                )}
               </div>
             </div>
           </div>

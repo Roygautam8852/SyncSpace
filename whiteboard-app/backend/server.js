@@ -7,6 +7,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const roomRoutes = require("./routes/roomRoutes");
 const livekitRoutes = require("./routes/livekitRoutes");
+const aiRoutes = require("./routes/aiRoutes");
 const setupSocket = require("./socket/socketHandler");
 
 // Load environment variables
@@ -25,6 +26,7 @@ const io = new Server(server, {
     origin: process.env.CLIENT_URL || "http://localhost:3000",
     methods: ["GET", "POST"],
   },
+  maxHttpBufferSize: 1e8, // 100 MB limit for large base64 image strings
 });
 
 // Middleware
@@ -40,6 +42,7 @@ app.use("/uploads", express.static("uploads"));
 app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/livekit", livekitRoutes);
+app.use("/api/ai", aiRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
