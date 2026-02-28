@@ -52,14 +52,13 @@ app.get("/api/health", (req, res) => {
 
 // Setup deployment: Serve frontend in production
 if (process.env.NODE_ENV === "production") {
-  // Determine platform specific path to frontend build
-  const __dirname = path.resolve();
-  // We assume backend and frontend are side-by-side inside whiteboard-app
-  app.use(express.static(path.join(__dirname, "../frontend/build")));
+  // Use built-in __dirname which is the directory of server.js (whiteboard-app/backend)
+  const buildPath = path.join(__dirname, "../frontend/build");
+  app.use(express.static(buildPath));
 
-  app.get("*", (req, res) =>
-    res.sendFile(path.resolve(__dirname, "../frontend", "build", "index.html"))
-  );
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(buildPath, "index.html"));
+  });
 } else {
   app.get("/", (req, res) => {
     res.send("API is running...");
