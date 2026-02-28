@@ -1,5 +1,6 @@
 const express = require("express");
 const http = require("http");
+const path = require("path");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { Server } = require("socket.io");
@@ -48,6 +49,22 @@ app.use("/api/ai", aiRoutes);
 app.get("/api/health", (req, res) => {
   res.json({ status: "OK", message: "Whiteboard API is running" });
 });
+
+// Setup deployment: Serve frontend in production
+if (process.env.NODE_ENV === "production") {
+  // Determine platform specific path to frontend build
+  const __dirname = path.resolve();
+  // We assume backend and frontend are side-by-side inside whiteboard-app
+  app.use(express.static(path.join(__dirname, "../frontend/build")));
+
+  app.get("*", (req, res) =>
+    res.sendFile(path.resolve(__dirname, "../frontend", "build", "index.html"))
+  );
+} else {
+  app.get("/", (req, res) => {
+    res.send("API is running...");
+  });
+}
 
 // Setup Socket.io
 setupSocket(io);

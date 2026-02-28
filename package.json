@@ -1,0 +1,10 @@
+{
+    "name": "syncspace-root",
+    "version": "1.0.0",
+    "description": "Root package for Render deployment",
+    "scripts": {
+        "postinstall": "npm install --prefix whiteboard-app/frontend && npm install --prefix whiteboard-app/backend",
+        "build": "npm run build --prefix whiteboard-app/frontend",
+        "start": "npm start --prefix whiteboard-app/backend"
+    }
+}
